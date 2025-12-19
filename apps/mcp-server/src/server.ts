@@ -123,6 +123,12 @@ export async function handler(req: IncomingMessage, res: ServerResponse) {
       return json(res, 200, { ok: true });
     }
 
+    // Expose the MCP endpoint at the root path only.
+    // Any /mcp or /sse routes are intentionally not supported.
+    if (url.pathname !== "/") {
+      return json(res, 404, { error: "Not Found" });
+    }
+
     if (method !== "POST") {
       return json(res, 405, { error: "Method Not Allowed" });
     }
