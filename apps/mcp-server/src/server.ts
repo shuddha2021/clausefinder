@@ -123,6 +123,15 @@ export async function handler(req: IncomingMessage, res: ServerResponse) {
       return json(res, 200, { ok: true });
     }
 
+    if (method === "OPTIONS" && url.pathname === "/") {
+      res.statusCode = 204;
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.end();
+      return;
+    }
+
     // Expose the MCP endpoint at the root path only.
     // Any /mcp or /sse routes are intentionally not supported.
     if (url.pathname !== "/") {
