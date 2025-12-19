@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { z } from "zod/v4-mini";
 
 import { DocStore } from "./lib/store.js";
 
@@ -21,78 +22,127 @@ export function createMcpServer() {
     version: "0.0.0"
   });
 
-  server.resource("ui://clausefinder/widget.html", async () => {
-    return {
-      contents: [
-        {
-          uri: "ui://clausefinder/widget.html",
-          mimeType: "text/html",
-          text: widgetResource
-        }
-      ]
-    };
-  });
+  server.registerResource(
+    "clausefinder_widget",
+    "ui://clausefinder/widget.html",
+    {
+      description: "Skybridge widget HTML for ClauseFinder",
+      mimeType: "text/html"
+    },
+    async () => {
+      return {
+        contents: [
+          {
+            uri: "ui://clausefinder/widget.html",
+            mimeType: "text/html",
+            text: widgetResource
+          }
+        ]
+      };
+    }
+  );
 
-  server.tool(
+  server.registerTool(
     "extract_document_text",
     {
-      filename: { type: "string" },
-      mime_type: { type: "string" },
-      pdf_base64: { type: "string" }
+      description: "Extract page-numbered text from a PDF and store it in memory.",
+      inputSchema: {
+        filename: z.string(),
+        mime_type: z.string(),
+        pdf_base64: z.string()
+      },
+      outputSchema: z.any()
     },
     async (args: any) => {
-      return tool_extract_document_text({ args, store });
+      const out = await tool_extract_document_text({ args, store });
+      return {
+        content: [{ type: "text", text: JSON.stringify(out, null, 2) }],
+        structuredContent: out
+      };
     }
   );
 
-  server.tool(
+  server.registerTool(
     "find_relevant_clauses",
     {
-      doc_id: { type: "string" },
-      query: { type: "string" },
-      max_results: { type: "number", optional: true },
-      excerpt_max_chars: { type: "number", optional: true }
+      description: "Find relevant clauses using deterministic keyword + phrase scoring.",
+      inputSchema: {
+        doc_id: z.string(),
+        query: z.string(),
+        max_results: z.optional(z.number()),
+        excerpt_max_chars: z.optional(z.number())
+      },
+      outputSchema: z.any()
     },
     async (args: any) => {
-      return tool_find_relevant_clauses({ args, store });
+      const out = await tool_find_relevant_clauses({ args, store });
+      return {
+        content: [{ type: "text", text: JSON.stringify(out, null, 2) }],
+        structuredContent: out
+      };
     }
   );
 
-  server.tool(
+  server.registerTool(
     "extract_key_fields",
     {
-      doc_id: { type: "string" },
-      clauses: { type: "array" }
+      description: "Extract key fields from quoted clauses using regex-only extraction.",
+      inputSchema: {
+        doc_id: z.string(),
+        clauses: z.array(z.any())
+      },
+      outputSchema: z.any()
     },
     async (args: any) => {
-      return tool_extract_key_fields({ args, store });
+      const out = await tool_extract_key_fields({ args, store });
+      return {
+        content: [{ type: "text", text: JSON.stringify(out, null, 2) }],
+        structuredContent: out
+      };
     }
   );
 
-  server.tool(
+  server.registerTool(
     "compute_deadlines",
     {
-      doc_id: { type: "string" },
-      clauses: { type: "array" },
-      reference_date: { type: "string", optional: true }
+      description:
+        "Compute deadlines only when an explicit base date and explicit duration (e.g. '30 days') exist.",
+      inputSchema: {
+        doc_id: z.string(),
+        clauses: z.array(z.any()),
+        reference_date: z.optional(z.string())
+      },
+      outputSchema: z.any()
     },
     async (args: any) => {
-      return tool_compute_deadlines({ args, store });
+      const out = await tool_compute_deadlines({ args, store });
+      return {
+        content: [{ type: "text", text: JSON.stringify(out, null, 2) }],
+        structuredContent: out
+      };
     }
   );
 
-  server.tool(
+  server.registerTool(
     "generate_notice_email",
     {
-      doc_id: { type: "string" },
-      clauses: { type: "array" },
-      to: { type: "string" },
-      from: { type: "string" },
-      purpose: { type: "string" },
-      subject: { type: "string", optional: true }
+      description: "Generate a deterministic notice email template with quoted clauses and page numbers.",
+      inputSchema: {
+        doc_id: z.string(),
+        clauses: z.array(z.any()),
+        to: z.string(),
+        from: z.string(),
+        purpose: z.string(),
+        subject: z.optional(z.string())
+      },
+      outputSchema: z.any()
     },
     async (args: any) => {
-      return tool_generate_notice_email({ args, store });
+      const out = await tool_generate_notice_email({ args, store });
+      return {
+        content: [{ type: "text", text: JSON.stringify(out, null, 2) }],
+        structuredContent: out
+      };
     }
   );
 
