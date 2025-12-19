@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 import { DocStore } from "./lib/store.js";
 
@@ -105,11 +106,20 @@ function json(res: ServerResponse, status: number, body: unknown) {
   res.end(text);
 }
 
-async function readJson(req: IncomingMessage): Promise<any> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(Buffer.from(chunk));
-  const raw = Buffer.concat(chunks).toString("utf8");
-  return raw ? JSON.parse(raw) : {};
+async function getHttpTransport(): Promise<StreamableHTTPServerTransport> {
+  const g = globalThis as any;
+  if (!g.__clausefinderMcpHttpPromise) {
+    g.__clausefinderMcpHttpPromise = (async () => {
+      const server = createMcpServer();
+      const transport = new StreamableHTTPServerTransport({
+        // Stateless mode (no session ID requirements) for maximum compatibility.
+        sessionIdGenerator: undefined
+      });
+      await server.connect(transport);
+      return transport;
+    })();
+  }
+  return g.__clausefinderMcpHttpPromise;
 }
 
 // Vercel-compatible HTTP handler.
@@ -138,37 +148,20 @@ export async function handler(req: IncomingMessage, res: ServerResponse) {
       return json(res, 404, { error: "Not Found" });
     }
 
+    // MCP-over-SSE uses GET / to establish the event stream.
+    if (method === "GET") {
+      const transport = await getHttpTransport();
+      await transport.handleRequest(req, res);
+      return;
+    }
+
     if (method !== "POST") {
       return json(res, 405, { error: "Method Not Allowed" });
     }
 
-    const body = await readJson(req);
-    const tool = body && body.tool;
-    const args = body && body.args;
-
-    if (typeof tool !== "string" || !args || typeof args !== "object") {
-      return json(res, 400, { error: "Expected { tool: string, args: object }" });
-    }
-
-    const g = globalThis as any;
-    const store: DocStore = g.__clausefinderStore || (g.__clausefinderStore = new DocStore());
-
-    let output: any;
-    if (tool === "extract_document_text") {
-      output = await tool_extract_document_text({ args, store });
-    } else if (tool === "find_relevant_clauses") {
-      output = await tool_find_relevant_clauses({ args, store });
-    } else if (tool === "extract_key_fields") {
-      output = await tool_extract_key_fields({ args, store });
-    } else if (tool === "compute_deadlines") {
-      output = await tool_compute_deadlines({ args, store });
-    } else if (tool === "generate_notice_email") {
-      output = await tool_generate_notice_email({ args, store });
-    } else {
-      return json(res, 404, { error: "Unknown tool" });
-    }
-
-    return json(res, 200, output);
+    const transport = await getHttpTransport();
+    await transport.handleRequest(req, res);
+    return;
   } catch (err: any) {
     return json(res, 500, { error: String(err && err.message ? err.message : err) });
   }
